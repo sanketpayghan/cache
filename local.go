@@ -11,7 +11,7 @@ const (
 	defaultCapacity = 1<<15 - 1
 	maximumCapacity = 1<<31 - 1
 	// Buffer size of entry channels
-	chanBufSize = 1
+	chanBufSize = 1024
 	// Maximum number of entries to be drained in a single clean up.
 	drainMax       = 16
 	drainThreshold = 64
@@ -94,7 +94,10 @@ func (c *localCache) GetIfPresent(k Key) (Value, bool) {
 		return nil, false
 	}
 	v := getEntry(el).value
-	c.hitEntry <- el
+	select {
+	case c.hitEntry <- el:
+	default:
+	}
 	c.stats.RecordHits(1)
 	return v, true
 }
@@ -107,14 +110,20 @@ func (c *localCache) Put(k Key, v Value) {
 	if hit {
 		// Update list element value
 		getEntry(el).value = v
-		c.hitEntry <- el
+		select {
+		case c.hitEntry <- el:
+		default:
+		}
 	} else {
 		en := &entry{
 			key:   k,
 			value: v,
 			hash:  sum(k),
 		}
-		c.addEntry <- en
+		select {
+		case c.addEntry <- en:
+		default:
+		}
 	}
 }
 
@@ -124,13 +133,19 @@ func (c *localCache) Invalidate(k Key) {
 	el, hit := c.cache.data[k]
 	c.cache.mu.RUnlock()
 	if hit {
-		c.deleteEntry <- el
+		select {
+		case c.deleteEntry <- el:
+		default:
+		}
 	}
 }
 
 // InvalidateAll resets entries list.
 func (c *localCache) InvalidateAll() {
-	c.deleteEntry <- nil
+	select {
+	case c.deleteEntry <- nil:
+	default:
+	}
 }
 
 // Get returns value associated with k or call underlying loader to retrieve value
@@ -151,7 +166,10 @@ func (c *localCache) Get(k Key) (Value, error) {
 		return c.refresh(en), nil
 	}
 	v := en.value
-	c.hitEntry <- el
+	select {
+	case c.hitEntry <- el:
+	default:
+	}
 	return v, nil
 }
 
@@ -250,7 +268,10 @@ func (c *localCache) load(k Key) (Value, error) {
 		value: v,
 		hash:  sum(k),
 	}
-	c.addEntry <- en
+	select {
+	case c.addEntry <- en:
+	default:
+	}
 	c.stats.RecordLoadSuccess(loadTime)
 	return v, nil
 }
@@ -271,7 +292,10 @@ func (c *localCache) refresh(en *entry) Value {
 		return en.value
 	}
 	en.value = newV
-	c.addEntry <- en
+	select {
+	case c.addEntry <- en:
+	default:
+	}
 	c.stats.RecordLoadSuccess(loadTime)
 	return newV
 }
