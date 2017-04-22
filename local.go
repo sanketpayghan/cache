@@ -2,7 +2,6 @@ package cache
 
 import (
 	"container/list"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -47,7 +46,6 @@ type localCache struct {
 	readCount int32
 
 	// for closing routines created by this cache.
-	closeMu sync.Mutex
 	closeCh chan struct{}
 }
 
@@ -78,14 +76,9 @@ func (c *localCache) init() {
 
 // Close implements io.Closer and always returns a nil error.
 func (c *localCache) Close() error {
-	c.closeMu.Lock()
-	defer c.closeMu.Unlock()
-	if c.closeCh != nil {
-		c.closeCh <- struct{}{}
-		// Wait for the goroutine to close this channel
-		// (should use sync.WaitGroup or a new channel instead?)
-		<-c.closeCh
-		c.closeCh = nil
+	select {
+	case c.closeCh <- struct{}{}:
+	default:
 	}
 	return nil
 }
@@ -168,7 +161,6 @@ func (c *localCache) Stats(t *Stats) {
 }
 
 func (c *localCache) processEntries() {
-	defer close(c.closeCh)
 	for {
 		select {
 		case <-c.closeCh:
