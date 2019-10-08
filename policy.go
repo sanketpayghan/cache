@@ -20,6 +20,10 @@ type entry struct {
 	// hash is the hash value of this entry key
 	hash uint64
 
+	//
+	refreshMu sync.Mutex
+	isRefreshing bool
+
 }
 
 // getEntry returns the entry attached to the given list element.
@@ -30,6 +34,21 @@ func getEntry(el *list.Element) *entry {
 // setEntry updates value of the given list element.
 func setEntry(el *list.Element, en *entry) {
 	el.Value = en
+}
+
+// lockEntry locks entry for refreshing so that no subsequent call will do refresh on same entry.
+func (en *entry) lockEntry() bool {
+	en.refreshMu.Lock()
+	canRefresh := !en.isRefreshing
+	en.isRefreshing = true
+	en.refreshMu.Unlock()
+	return canRefresh
+}
+
+func (en *entry) unlockEntry()  {
+	en.refreshMu.Lock()
+	en.isRefreshing = false
+	en.refreshMu.Unlock()
 }
 
 // cache is a data structure for cache entries.
